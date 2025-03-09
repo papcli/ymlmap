@@ -24,3 +24,4 @@ docs/
 # Code coverage
 *.lst
 
+*.pdb

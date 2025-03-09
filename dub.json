@@ -1,0 +1,16 @@
+{
+  "name": "ymlmap",
+	"description": "yaml to struct mapper for the dyaml package",
+	"license": "MIT",
+	"copyright": "Copyright © 2025, munchii",
+	"homepage": "https://git.munchii.me/pap/dyaml-mapper",
+  "authors": [
+		"munchii"
+	],
+	"dependencies": {
+		"dyaml": "~>0.10.0"
+	},
+	"sourcePaths": [
+    "source"
+  ]
+}
