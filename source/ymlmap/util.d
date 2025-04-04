@@ -3,6 +3,8 @@ module ymlmap.util;
 import std.meta : Alias, AliasSeq, anySatisfy;
 import std.traits : hasUDA, getUDAs, hasMember, getSymbolsByUDA;
 
+import ymlmap.mapper : Field;
+
 template value(C, alias m)
 {
     alias value = __traits(getMember, C, m);
