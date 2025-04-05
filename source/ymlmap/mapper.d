@@ -1,4 +1,3 @@
-// ymlmap.mapper.d
 // TODO: Consider collecting errors instead of just printing to stderr.
 // TODO: Add support for Nullable complex types if needed (e.g., Nullable!Nested).
 
@@ -33,51 +32,36 @@
  +/
 module ymlmap.mapper;
 
-// --- Imports ---
 import std.stdio : stderr;
 import std.typecons : Nullable;
-import std.traits : hasUDA, getUDAs, isIntegral, isFloatingPoint, isSomeString, isAggregateType, getSymbolsByUDA; // Key traits
+import std.traits : hasUDA, getUDAs, isIntegral, isFloatingPoint, isSomeString, isAggregateType, getSymbolsByUDA;
 import std.datetime : SysTime;
 import std.conv : to;
-import std.string : representation; // For __traits(identifier)
-import std.meta : AliasSeq;
 
 import dyaml.node;
-import dyaml.exception; // For catching specific dyaml errors
-import dyaml.parser;   // Potentially useful enums/types
-import dyaml.loader;   // Needed for example
+import dyaml.exception;
+import dyaml.parser;
 import dyaml.stdsumtype;
 
-// --- Attributes ---
-
-/++ ditto +/
-public struct Field
-{
-    /// The name of the field in the YAML file. If not provided, the D field name is used.
-    string name;
-
-    public this(string name) @safe pure nothrow
-    {
-        this.name = name;
-    }
-}
-
-/++ ditto +/
-public struct Required {}
+import ymlmap.attributes;
 
 // --- Internal State and Helpers ---
 
 private struct ParseState(C) // C is the *outermost* struct type being mapped
 {
     static assert(is(C == struct), "Internal Error: ParseState instantiated with non-struct type: " ~ C.stringof);
+    
     // Node root; // Maybe not needed? Context passed down via tags.
-    bool failed; // Global failure flag for this mapping operation
-    mixin RequireStruct!C requires; // Tracks required fields for *this* C instance
+
+    /// Global failure flag for this mapping operation
+    bool failed;
+    
+    /// Tracks required fields for *this* C instance
+    mixin RequireStruct!C requires;
 }
 
 private mixin template RequireStruct(C)
 {
-    // Guard replaced by ParseState's assert
     static foreach (memberSymbol; getSymbolsByUDA!(C, Required))
     {
         mixin("bool " ~ __traits(identifier, memberSymbol) ~ " = false;");
@@ -103,7 +87,6 @@ private template isMappableType(T)
 /// Determines the expected YAML field name from @Field attribute or D member name.
 private string getExpectedYamlName(alias c, alias MemberSymbol)() @safe pure nothrow
 {
-    //alias FieldAttrs = getUDAs!(MemberSymbol, Field);
     alias FieldAttrs = getUDAs!(__traits(getMember, c, MemberSymbol), Field);
     static assert(FieldAttrs.length == 1, "Internal Error: Expected one @Field for '" ~ MemberSymbol ~ "'");
 
@@ -278,19 +261,18 @@ private E mapItem(E, C)(ref ParseState!C state, Node itemNode, string itemTag, r
  +/
 private void mapNode(C)(ref ParseState!C state, ref C c, Node node, string nodeTag)
 {
-    static assert(is(C == struct)); // Should be guaranteed by caller map()
+    // Sanity check - should be guaranteed by caller map()
+    static assert(is(C == struct));
 
     foreach (member; __traits(allMembers, C))
     {
         // Get the member symbol itself for use with traits
-        alias MemberSymbol = typeof(__traits(getMember, c, member));
-        enum memberName = __traits(identifier, member); // Get D field name string
+        //alias MemberSymbol = typeof(__traits(getMember, c, member)); // not needed here?
 
         // Check if this D field has the @Field attribute
         static if (hasUDA!(__traits(getMember, c, member), Field))
         {
             // Determine the YAML name this field expects
-            //string expectedYamlName = getExpectedYamlName!(__traits(getMember, c, member));
             string expectedYamlName = getExpectedYamlName!(c, member);
 
             // If the current YAML key matches the name expected by this field...
@@ -308,7 +290,7 @@ private void mapNode(C)(ref ParseState!C state, ref C c, Node node, string nodeT
                     {
                         if (node.type != NodeType.sequence)
                         {
-                            stderr.writeln("Error mapping field '", memberName, "' ('", MemberType.stringof, "'): Expected a YAML Sequence for array type, but got '", node.type, "' for key '", nodeTag, "'.");
+                            stderr.writeln("Error mapping field '", member, "' ('", MemberType.stringof, "'): Expected a YAML Sequence for array type, but got '", node.type, "' for key '", nodeTag, "'.");
                             state.failed = true;
                         }
                         else
@@ -334,7 +316,7 @@ private void mapNode(C)(ref ParseState!C state, ref C c, Node node, string nodeT
                             }
                             else
                             {
-                                stderr.writeln("Error mapping field '", memberName, "': Array element type '", E.stringof, "' is not a supported mappable type (basic or struct).");
+                                stderr.writeln("Error mapping field '", member, "': Array element type '", E.stringof, "' is not a supported mappable type (basic or struct).");
                                 state.failed = true;
                             }
                         }
@@ -345,13 +327,13 @@ private void mapNode(C)(ref ParseState!C state, ref C c, Node node, string nodeT
                     {
                         if (node.type != NodeType.mapping)
                         {
-                            stderr.writeln("Error mapping field '", memberName, "' ('", MemberType.stringof, "'): Expected a YAML Mapping for associative array type, but got '", node.type, "' for key '", nodeTag, "'.");
+                            stderr.writeln("Error mapping field '", member, "' ('", MemberType.stringof, "'): Expected a YAML Mapping for associative array type, but got '", node.type, "' for key '", nodeTag, "'.");
                             state.failed = true;
                         }
                         else
                         {
                             // Check key type K support
-                            static assert(isBasicYamlType!K || isSomeString!K, "Associative array key type '" ~ K.stringof ~ "' in field '" ~ memberName ~ "' is not supported (must be basic YAML type).");
+                            static assert(isBasicYamlType!K || isSomeString!K, "Associative array key type '" ~ K.stringof ~ "' in field '" ~ member ~ "' is not supported (must be basic YAML type).");
                             // Value type V can be basic or struct (handled by mapItem)
                             static if (isMappableType!V)
                             {
@@ -365,7 +347,7 @@ private void mapNode(C)(ref ParseState!C state, ref C c, Node node, string nodeT
                                     try { key = pair.key.as!K; }
                                     catch (Exception e)
                                     {
-                                        stderr.writeln("Error converting YAML key '", pair.key, "' to type '", K.stringof, "' for AA field '", memberName, "': ", e.msg);
+                                        stderr.writeln("Error converting YAML key '", pair.key, "' to type '", K.stringof, "' for AA field '", member, "': ", e.msg);
                                         state.failed = true;
                                         break;
                                     }
@@ -385,7 +367,7 @@ private void mapNode(C)(ref ParseState!C state, ref C c, Node node, string nodeT
                             }
                             else
                             {
-                                stderr.writeln("Error mapping field '", memberName, "': Associative array value type '", V.stringof, "' is not a supported mappable type (basic or struct).");
+                                stderr.writeln("Error mapping field '", member, "': Associative array value type '", V.stringof, "' is not a supported mappable type (basic or struct).");
                                 state.failed = true;
                             }
                         }
@@ -396,7 +378,7 @@ private void mapNode(C)(ref ParseState!C state, ref C c, Node node, string nodeT
                     {
                         if (node.type != NodeType.mapping)
                         {
-                            stderr.writeln("Error mapping field '", memberName, "' ('", MemberType.stringof, "'): Expected a YAML Mapping for struct type, but got '", node.type, "' for key '", nodeTag, "'.");
+                            stderr.writeln("Error mapping field '", member, "' ('", MemberType.stringof, "'): Expected a YAML Mapping for struct type, but got '", node.type, "' for key '", nodeTag, "'.");
                             state.failed = true;
                         }
                         else
@@ -415,14 +397,14 @@ private void mapNode(C)(ref ParseState!C state, ref C c, Node node, string nodeT
                     {
                         if (node.type == NodeType.sequence || node.type == NodeType.mapping)
                         {
-                            stderr.writeln("Error mapping field '", memberName, "' ('", MemberType.stringof, "'): Expected a YAML Scalar or Null for basic type, but got '", node.type, "' for key '", nodeTag, "'.");
+                            stderr.writeln("Error mapping field '", member, "' ('", MemberType.stringof, "'): Expected a YAML Scalar or Null for basic type, but got '", node.type, "' for key '", nodeTag, "'.");
                             state.failed = true;
                         }
                         else // Handle scalar or null
                         {
                             if (node.type == NodeType.null_ && !is(MemberType : Nullable!U, U))
                             {
-                                stderr.writeln("Warning: Assigning YAML null to non-nullable field '", memberName, "' ('", MemberType.stringof, "'). Using default value.");
+                                stderr.writeln("Warning: Assigning YAML null to non-nullable field '", member, "' ('", MemberType.stringof, "'). Using default value.");
                                 __traits(getMember, c, member) = MemberType.init; // Assign default
                             }
                             else
@@ -433,7 +415,7 @@ private void mapNode(C)(ref ParseState!C state, ref C c, Node node, string nodeT
                                 }
                                 catch (Exception e) // Catch dyaml .as errors specifically
                                 {
-                                    stderr.writeln("Error converting YAML value for key '", nodeTag, "' to field '", memberName,"' ('", MemberType.stringof, "'): ", e.msg);
+                                    stderr.writeln("Error converting YAML value for key '", nodeTag, "' to field '", member,"' ('", MemberType.stringof, "'): ", e.msg);
                                     state.failed = true;
                                 }
                             }
@@ -443,20 +425,20 @@ private void mapNode(C)(ref ParseState!C state, ref C c, Node node, string nodeT
                     // Case 5: Unsupported D Member Type
                     else
                     {
-                        stderr.writeln("Error mapping field '", memberName, "': Target type '", MemberType.stringof, "' is not supported by the YAML mapper.");
+                        stderr.writeln("Error mapping field '", member, "': Target type '", MemberType.stringof, "' is not supported by the YAML mapper.");
                         state.failed = true;
                     }
 
                     // --- Mark required field if mapping was attempted (even if error occurred within) ---
                     static if (hasUDA!(__traits(getMember, c, member), Required))
                     {
-                        mixin("state.requires." ~ memberName ~ " = true;");
+                        mixin("state.requires." ~ member ~ " = true;");
                     }
 
                 }
                 catch (Exception e) // Catch unexpected errors during mapping logic
                 {
-                    stderr.writeln("Internal Error during mapping field '", memberName, "' (YAML key '", nodeTag, "'): ", e.msg);
+                    stderr.writeln("Internal Error during mapping field '", member, "' (YAML key '", nodeTag, "'): ", e.msg);
                     state.failed = true;
                 }
 
@@ -483,26 +465,25 @@ private bool checkRequires(C)(ref ParseState!C state, Node parentContext)
     bool allFound = true;
     string parentIdentifier = (parentContext.tag.length == 0) ? "<root>" : parentContext.tag;
 
-    static foreach (member; __traits(allMembers, C)) // Iterate actual members of C
+    static foreach (member; __traits(allMembers, C))
     {
-        // TODO: ???
-        //alias MemberSymbol = typeof(__traits(getMember, C, member)); // Get symbol info for UDA check
-        //auto MemberSymbol = typeof(__traits(getMember, C, member)); // Get symbol info for UDA check
-        //enum memberName = __traits(identifier, member);
-        //auto memberName = member;
+        // Get symbol info for UDA check
+        //alias MemberSymbol = typeof(__traits(getMember, C, member)); why is this even needed?
 
         // Check if this member is Required AND if its flag in state.requires is false
         static if (hasUDA!(__traits(getMember, C, member), Required))
         {
-            if (!mixin("state.requires." ~ /*memberName*/ member)) // TODO: ???
+            if (!mixin("state.requires." ~ member))
             {
-                allFound = false; // Found a missing required field
+                // Found a missing required field
+                allFound = false;
 
                 // Determine the expected YAML name for the error message
                 string expectedYamlName = getExpectedYamlName!(__traits(getMember, C, member));
 
-                stderr.writeln("Validation Error: Required field '", expectedYamlName, "' (mapped to D field '", memberName, "') is missing from YAML object '", parentIdentifier, "'.");
-                state.failed = true; // Mark overall failure
+                // Mark overall failure
+                stderr.writeln("Validation Error: Required field '", expectedYamlName, "' (mapped to D field '", member, "') is missing from YAML object '", parentIdentifier, "'.");
+                state.failed = true;
             }
         }
     }
@@ -527,14 +508,13 @@ private void validateStruct(C)() @safe pure nothrow
 
     // Optional: Static checks for supported types on @Field members
     static foreach (memberSymbol; getSymbolsByUDA!(C, Field))
-    {
-        // TODO: ???
-        //alias memberType = typeof(__traits(getMember, C, __traits(identifier, memberSymbol)));
+    {{
+        alias memberType = typeof(__traits(getMember, C, __traits(identifier, memberSymbol)));
 
         // Could check isMappableType or more specific constraints here
         // static assert(isMappableType!memberType || isArray!memberType || isAssociativeArray!memberType,
         //    "Field '" ~ __traits(identifier, memberSymbol) ~ "' has unsupported type '"~memberType.stringof~"' for YAML mapping.");
-    }
+    }}
 }
 
 // --- Example Usage ---
@@ -543,6 +523,7 @@ private void validateStruct(C)() @safe pure nothrow
 unittest // Keep main separate, use unittest for inline example
 {
     import std.file : write, remove;
+    import dyaml.loader;
 
     enum yamlContent = q{
         name: Example Config
