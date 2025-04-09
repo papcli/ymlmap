@@ -85,9 +85,9 @@ private template isMappableType(T)
 }
 
 /// Determines the expected YAML field name from @Field attribute or D member name.
-private string getExpectedYamlName(alias c, alias MemberSymbol)() @safe pure nothrow
+private string getExpectedYamlName(C, alias MemberSymbol)() @safe pure nothrow
 {
-    alias FieldAttrs = getUDAs!(__traits(getMember, c, MemberSymbol), Field);
+    alias FieldAttrs = getUDAs!(__traits(getMember, C, MemberSymbol), Field);
     static assert(FieldAttrs.length == 1, "Internal Error: Expected one @Field for '" ~ MemberSymbol ~ "'");
 
     string nameFromAttr;
@@ -269,7 +269,7 @@ private void mapNode(C)(ref ParseState!C state, ref C c, Node node, string nodeT
         static if (hasUDA!(__traits(getMember, c, member), Field))
         {
             // Determine the YAML name this field expects
-            string expectedYamlName = getExpectedYamlName!(c, member);
+            string expectedYamlName = getExpectedYamlName!(C, member);
 
             // If the current YAML key matches the name expected by this field...
             if (expectedYamlName == nodeTag)
@@ -466,7 +466,7 @@ private bool checkRequires(C)(ref ParseState!C state, Node parentContext)
             {
                 allFound = false;
 
-                string expectedYamlName = getExpectedYamlName!(__traits(getMember, C, member));
+                string expectedYamlName = getExpectedYamlName!(C, member);
 
                 // Mark overall failure
                 stderr.writeln("Validation Error: Required field '", expectedYamlName, "' (mapped to D field '", member, "') is missing from YAML object '", parentIdentifier, "'.");
