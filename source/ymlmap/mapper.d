@@ -34,7 +34,7 @@ module ymlmap.mapper;
 
 import std.stdio : stderr;
 import std.typecons : Nullable;
-import std.traits : hasUDA, getUDAs, isIntegral, isFloatingPoint, isSomeString, isAggregateType, getSymbolsByUDA;
+import std.traits : hasUDA, getUDAs, isIntegral, isFloatingPoint, isSomeString, isArray, isAssociativeArray, isAggregateType, getSymbolsByUDA;
 import std.datetime : SysTime;
 import std.conv : to;
 
@@ -47,15 +47,15 @@ import ymlmap.attributes;
 
 // --- Internal State and Helpers ---
 
-private struct ParseState(C) // C is the *outermost* struct type being mapped
+private struct ParseState(C)
 {
     static assert(is(C == struct), "Internal Error: ParseState instantiated with non-struct type: " ~ C.stringof);
-    
+
     // Node root; // Maybe not needed? Context passed down via tags.
 
     /// Global failure flag for this mapping operation
     bool failed;
-    
+
     /// Tracks required fields for *this* C instance
     mixin RequireStruct!C requires;
 }
@@ -90,7 +90,7 @@ private string getExpectedYamlName(alias c, alias MemberSymbol)() @safe pure not
     alias FieldAttrs = getUDAs!(__traits(getMember, c, MemberSymbol), Field);
     static assert(FieldAttrs.length == 1, "Internal Error: Expected one @Field for '" ~ MemberSymbol ~ "'");
 
-    string nameFromAttr = ""; // Use default init
+    string nameFromAttr;
     static if (is(FieldAttrs[0].name)) // Check valid access first (for bare @Field)
     {
         nameFromAttr = FieldAttrs[0].name;
@@ -98,11 +98,11 @@ private string getExpectedYamlName(alias c, alias MemberSymbol)() @safe pure not
 
     if (nameFromAttr !is null && nameFromAttr.length > 0)
     {
-        return nameFromAttr; // Use explicit name
+        return nameFromAttr;
     }
     else
     {
-        return MemberSymbol; // Fallback to D identifier
+        return MemberSymbol;
     }
 }
 
@@ -119,9 +119,9 @@ private string getExpectedYamlName(alias c, alias MemberSymbol)() @safe pure not
  +/
 public C map(C)(Node root, ref bool successfulValidation)
 {
-    validateStruct!C(); // Static checks on C's definition
-    C c; // Result struct instance
-    ParseState!C state; // Holds 'failed' flag and 'requires' tracking for C
+    validateStruct!C();
+    C c;
+    ParseState!C state;
 
     // --- Root Node Handling ---
     if (root.type != NodeType.mapping)
@@ -146,7 +146,7 @@ public C map(C)(Node root, ref bool successfulValidation)
             try
             {
                 keyTag = pair.key.as!string;
-                if (keyTag is null) throw new Exception("YAML key evaluated to null string"); // dyaml 'as' might allow null?
+                if (keyTag is null) throw new Exception("YAML key evaluated to null string");
             }
             catch (Exception e)
             {
@@ -190,7 +190,7 @@ private E mapItem(E, C)(ref ParseState!C state, Node itemNode, string itemTag, r
     static assert(is(typeof(state) == ParseState!C), "Internal Error: mapItem received incorrect state type.");
     static assert(!is(E == void), "Internal Error: mapItem instantiated with void element type.");
 
-    E itemValue; // Default initialize result
+    E itemValue;
     itemValidated = false;
 
     try
@@ -202,7 +202,7 @@ private E mapItem(E, C)(ref ParseState!C state, Node itemNode, string itemTag, r
             {
                 static if (is(E : Nullable!U, U)) // Target is Nullable!Basic
                 {
-                    itemValue = E.init; // Assign D `null` equivalent
+                    itemValue = E.init;
                     itemValidated = true;
                 }
                 else // Target is non-nullable basic
@@ -224,13 +224,12 @@ private E mapItem(E, C)(ref ParseState!C state, Node itemNode, string itemTag, r
             if (itemNode.type != NodeType.mapping)
             {
                 stderr.writeln("Error mapping item '", itemTag, "': Expected a YAML Mapping for struct type '", E.stringof, "', but got '", itemNode.type, "'.");
-                state.failed = true; // Report failure
+                state.failed = true;
                 // itemValidated remains false
             }
             else
             {
                 // Recursively map the item node to struct E.
-                // This call *will* correctly create a new ParseState!E internally.
                 itemValue = map!E(itemNode, itemValidated); // itemValidated is set by recursive map!
                 // If recursive call failed validation/mapping, propagate failure to outer state.
                 if (!itemValidated) state.failed = true;
@@ -266,9 +265,6 @@ private void mapNode(C)(ref ParseState!C state, ref C c, Node node, string nodeT
 
     foreach (member; __traits(allMembers, C))
     {
-        // Get the member symbol itself for use with traits
-        //alias MemberSymbol = typeof(__traits(getMember, c, member)); // not needed here?
-
         // Check if this D field has the @Field attribute
         static if (hasUDA!(__traits(getMember, c, member), Field))
         {
@@ -297,21 +293,19 @@ private void mapNode(C)(ref ParseState!C state, ref C c, Node node, string nodeT
                         {
                             static if (isMappableType!E) // Check if element type E is mappable
                             {
-                                auto arr = __traits(getMember, c, member); // Get current array instance
-                                arr.length = 0; // Clear it
+                                auto arr = __traits(getMember, c, member);
+                                arr.length = 0;
                                 int i = 0;
                                 foreach (Node elementNode; node.sequence())
                                 {
                                     bool elementValidated = false;
                                     string nestedTag = nodeTag ~ "[" ~ i.to!string ~ "]";
-                                    // Map the YAML element node to D type E using mapItem
                                     auto value = mapItem!(E, C)(state, elementNode, nestedTag, elementValidated);
                                     if (state.failed) break; // Stop if item mapping failed
                                     arr ~= value;
                                     i++;
                                 }
 
-                                // Assign back only if loop completed without critical failure
                                 if (!state.failed) __traits(getMember, c, member) = arr;
                             }
                             else
@@ -337,8 +331,8 @@ private void mapNode(C)(ref ParseState!C state, ref C c, Node node, string nodeT
                             // Value type V can be basic or struct (handled by mapItem)
                             static if (isMappableType!V)
                             {
-                                auto mapAA = __traits(getMember, c, member); // Get current AA instance
-                                mapAA = null; // Clear it
+                                auto mapAA = __traits(getMember, c, member);
+                                mapAA = null;
 
                                 foreach (Node.Pair pair; node.mapping())
                                 {
@@ -359,10 +353,9 @@ private void mapNode(C)(ref ParseState!C state, ref C c, Node node, string nodeT
                                     auto value = mapItem!(V, C)(state, valueNode, valueTag, valueValidated);
                                     if (state.failed) break; // Stop if value mapping failed
 
-                                    mapAA[key] = value; // Add to AA
+                                    mapAA[key] = value;
                                 }
 
-                                // Assign back only if loop completed without failure
                                 if (!state.failed) __traits(getMember, c, member) = mapAA;
                             }
                             else
@@ -384,10 +377,9 @@ private void mapNode(C)(ref ParseState!C state, ref C c, Node node, string nodeT
                         else
                         {
                             bool nestedValidated = false;
-                            // Recursively call map! for the nested struct type
                             auto value = map!MemberType(node, nestedValidated);
+
                             if (!nestedValidated) state.failed = true;
-                            // Assign only if mapping didn't fail overall state
                             if (!state.failed) __traits(getMember, c, member) = value;
                         }
                     }
@@ -467,18 +459,13 @@ private bool checkRequires(C)(ref ParseState!C state, Node parentContext)
 
     static foreach (member; __traits(allMembers, C))
     {
-        // Get symbol info for UDA check
-        //alias MemberSymbol = typeof(__traits(getMember, C, member)); why is this even needed?
-
         // Check if this member is Required AND if its flag in state.requires is false
         static if (hasUDA!(__traits(getMember, C, member), Required))
         {
             if (!mixin("state.requires." ~ member))
             {
-                // Found a missing required field
                 allFound = false;
 
-                // Determine the expected YAML name for the error message
                 string expectedYamlName = getExpectedYamlName!(__traits(getMember, C, member));
 
                 // Mark overall failure
@@ -506,14 +493,15 @@ private void validateStruct(C)() @safe pure nothrow
             "Field '" ~ __traits(identifier, memberSymbol) ~ "' in struct '" ~ C.stringof ~ "' is marked @Required but is missing @Field.");
     }
 
-    // Optional: Static checks for supported types on @Field members
-    static foreach (memberSymbol; getSymbolsByUDA!(C, Field))
+    static foreach (member; __traits(allMembers, C))
     {{
-        alias memberType = typeof(__traits(getMember, C, __traits(identifier, memberSymbol)));
-
-        // Could check isMappableType or more specific constraints here
-        // static assert(isMappableType!memberType || isArray!memberType || isAssociativeArray!memberType,
-        //    "Field '" ~ __traits(identifier, memberSymbol) ~ "' has unsupported type '"~memberType.stringof~"' for YAML mapping.");
+        static if (hasUDA!(__traits(getMember, C, member), Field))
+        {
+            alias memberType = typeof(__traits(getMember, C, member));
+    
+            static assert(isMappableType!memberType || isArray!memberType || isAssociativeArray!memberType,
+                "Field '" ~ member ~ "' has unsupported type '" ~ memberType.stringof ~ "' for YAML mapping.");
+        }
     }}
 }
 

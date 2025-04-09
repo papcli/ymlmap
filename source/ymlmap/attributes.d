@@ -18,3 +18,28 @@ public struct Field
  + The `Required` attribute is used to specify that a field is required in the YAML file.
  +/
 public struct Required {}
+
+/++
+ + The `Constructor` attribute is used to specify a constructor function for a field.
+ + It is used to convert the YAML node to the desired type.
+ +/
+public struct Constructor(T)
+{
+    import dyaml.node : Node;
+
+    public alias ConstructorFunc = T function(Node input);
+
+    public ConstructorFunc constructor;
+}
+
+public auto constructor(FT)(FT func)
+{
+    import std.traits : isFunctionPointer, ReturnType;
+
+    static assert(isFunctionPointer!FT, "Error: Argument to `constructor` should be a function pointer, not: " ~ FT.stringof);
+    
+    alias RType = ReturnType!FT;
+    static assert(!is(RType == void), "Error: Converter needs to be of the return type of the field, not `void`");
+    
+    return Constructor!RType(func);
+}
