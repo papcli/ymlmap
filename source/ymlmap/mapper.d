@@ -85,24 +85,32 @@ private template isMappableType(T)
 }
 
 /// Determines the expected YAML field name from @Field attribute or D member name.
-private string getExpectedYamlName(C, alias MemberSymbol)() @safe pure nothrow
+private string getExpectedYamlName(C, alias MemberSymbol)() //@safe pure nothrow
 {
     alias FieldAttrs = getUDAs!(__traits(getMember, C, MemberSymbol), Field);
-    static assert(FieldAttrs.length == 1, "Internal Error: Expected one @Field for '" ~ MemberSymbol ~ "'");
+    static assert(FieldAttrs.length == 1,
+        "Internal Error: Expected one @Field for '" ~ MemberSymbol ~ "'");
 
-    string nameFromAttr;
-    static if (is(FieldAttrs[0].name)) // Check valid access first (for bare @Field)
-    {
-        nameFromAttr = FieldAttrs[0].name;
-    }
-
-    if (nameFromAttr !is null && nameFromAttr.length > 0)
-    {
-        return nameFromAttr;
-    }
-    else
+    alias FieldAttr = FieldAttrs[0];
+    
+    // Check if the UDA applied was the type itself (@Field) vs. an instance (@Field() or @Field("name"))
+    static if (is(FieldAttr == Field))
     {
         return MemberSymbol;
+    }
+    else // UDA was applied as "@Field()" or "@Field("name")"
+    {
+        string nameFromAttr = FieldAttr.name;
+        
+        // Use the name from the attribute only if it's non-null and non-empty
+        if (nameFromAttr !is null && nameFromAttr.length > 0)
+        {
+            return nameFromAttr;
+        }
+        else // Fallback for @Field() or @Field("")
+        {
+            return MemberSymbol;
+        }
     }
 }
 
@@ -498,7 +506,7 @@ private void validateStruct(C)() @safe pure nothrow
         static if (hasUDA!(__traits(getMember, C, member), Field))
         {
             alias memberType = typeof(__traits(getMember, C, member));
-    
+
             static assert(isMappableType!memberType || isArray!memberType || isAssociativeArray!memberType,
                 "Field '" ~ member ~ "' has unsupported type '" ~ memberType.stringof ~ "' for YAML mapping.");
         }
