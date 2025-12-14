@@ -1,5 +1,6 @@
 // TODO: Consider collecting errors instead of just printing to stderr.
 // TODO: Add support for Nullable complex types if needed (e.g., Nullable!Nested).
+// TODO: `Key` attribute to turn mappings into array. so the mapping key becomes the `Key` field
 
 /**
  * Acknowledgements:

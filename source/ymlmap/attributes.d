@@ -19,6 +19,12 @@ public struct Field
  +/
 public struct Required {}
 
+public struct Key
+{
+    /// The name of the mapping key
+    string name;
+}
+
 /++
  + The `Constructor` attribute is used to specify a constructor function for a field.
  + It is used to convert the YAML node to the desired type.
